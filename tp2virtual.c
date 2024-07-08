@@ -30,9 +30,9 @@ int findS_offset(int PageSize);
 void addPage(unsigned addr);
 void updatePage(page* page_to_update);
 page* checkPage(unsigned addr);
-void updateAddress(unsigned addr, char* alg);
+void updateAddress(unsigned addr, char* alg, int changed);
 void LRU(unsigned addr);
-void FIFO(unsigned addr);
+void FIFO(unsigned addr, int changed);
 void secondChance(unsigned addr);
 void random(unsigned addr);
 
@@ -85,12 +85,12 @@ page* checkPage(unsigned addr){
 }
 
 
-void updateAddress(unsigned addr, char* alg){
+void updateAddress(unsigned addr, char* alg, int changed){
     if(strcmp(alg, "lru") == 0){
         LRU(addr);
     }
     else if(strcmp(alg, "fifo") == 0){
-        FIFO(addr);
+        FIFO(addr, changed);
     }
     else if(strcmp(alg, "2a") == 0){
         secondChance(addr);
@@ -104,7 +104,7 @@ void LRU(unsigned addr){
     //TODO
 }
 
-void FIFO(unsigned addr){
+void FIFO(unsigned addr, int changed){
     // 
     page *aux = table->first;
     // 
@@ -117,7 +117,8 @@ void FIFO(unsigned addr){
     aux->id = addr;
     table->last = aux;
 
-    diskAccess++;
+    if(changed)
+        diskAccess++;
 }
 
 void secondChance(unsigned addr){
@@ -148,39 +149,44 @@ int main(int argc, char* argv[]){
     //file read
     unsigned addr;
     char rw;
+
+    int changed = 0;
+
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
         addr = addr >> s;
         memoryAccess++;
 
         if(tolower(rw) == 'w'){
-            //check if space in page table
-            if(numPages > table->size){
-                // check if page exist
-                if(!checkPage(addr))
-                    addPage(addr);    
-                else{
-                    // do nothing
-                    continue;
-                }
+            changed = 1;
+            // check if page exist
+            if(checkPage(addr) == NULL){
+                // faults
+                // add page
+                
+                pageFaults++;
+                if(numPages > table->size)
+                    addPage(addr);
+                else
+                    updateAddress(addr, alg, changed);
             }
             else{
-                // out of space to add
-                // remove page and add new
-                //use algoritms
-                updateAddress(addr, alg);
+                // just read
+                continue;
             }
             
         }
         else if(tolower(rw) == 'r'){
+
+            changed = 0;
             // check if page exist
-            if(!checkPage(addr)){
+            if(checkPage(addr) == NULL){
                 // faults
                 // add page
                 pageFaults++;
                 if(numPages > table->size)
                     addPage(addr);
                 else
-                    updateAddress(addr, alg);
+                    updateAddress(addr, alg, changed);
             }
             else{
                 // just read
@@ -197,6 +203,7 @@ int main(int argc, char* argv[]){
     printf("Tamanho da memoria: %iKB\n", memSize);
     printf("Tamanho das paginas: %iKB\n", pageSize);
     printf("Tecnica de reposicao: %s\n", alg);
+    printf("Numero de acessos à memória: %i\n", memoryAccess);
     printf("Paginas lidas: %i\n", pageFaults);
     printf("Paginas escritas: %i\n", diskAccess);
 
