@@ -2,24 +2,45 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
+#include <math.h>
 
-// struct for the pages
+// struct for the page of page table
+// index = address
 typedef struct page{
-    unsigned id;
-    struct page *next;
-    struct page *prev;
-    int changed; // ??????????????????????????????????
+    int addressInMemory;
+    int valid; // if exists != -1
 }page;
 
-// struct for the page table
-typedef struct page_table{
-    page *first;
-    page *last;
+// struct for frame
+typedef struct frame{
+    int addressInTable;
+    int changed;
+    int lastAccess;
+    int ref; //SECOND CHANCE
+}frame;
+
+// aux structs
+// lista duplamente encadeada
+typedef struct node{
+    struct node *next;
+    struct node *prev;
+    int id; //alter by need
+} node;
+
+typedef struct list{
     int size;
-}page_table;
+    struct node *first;
+    struct node *last;
+} list;
 
 // initialize global
-page_table *table;
+page *pageTable;
+frame *memory;
+int pageTableSize;
+int memorySize;
+int currentMemorySize;
+list *indexList;
+
 // initialize variables for report
 int pageFaults = 0; 
 int diskAccess = 0;
@@ -27,14 +48,8 @@ int memoryAccess = 0;
 
 // function prototypes
 int findS_offset(int PageSize);
-void addPage(unsigned addr);
-void updatePage(page* page_to_update);
-page* checkPage(unsigned addr);
-void updateAddress(unsigned addr, char* alg, int changed);
-void LRU(unsigned addr);
-void FIFO(unsigned addr, int changed);
-void secondChance(unsigned addr);
-void random(unsigned addr);
+void denseFifo(int addr);
+
 
 // find the number of bits for the offset for find page
 int findS_offset(int PageSize){
@@ -47,86 +62,223 @@ int findS_offset(int PageSize){
     return s;
 }
 
-void addPage(unsigned addr){
-    page *new_page = malloc(sizeof(page));
-    new_page->id = addr;
-    new_page->prev = NULL;
-    new_page->next = NULL;
-
-    if(table->size == 0){
-        table->first = new_page;
-        table->last = new_page;
+/*
+first in, first out
+*/
+void denseFifo(int addr){
+    pageTable[addr].valid = 1;
+    pageTable[addr].addressInMemory = memorySize;
+    pageTable[memory[0].addressInTable].valid = 0;
+    
+    for (int i = 0; i < memorySize - 1; i++){
+        memory[i] = memory[i+1];
     }
-    else if(table->size == 1){
-        table->last = new_page;
-        table->first->next = new_page;
-        new_page->prev = table->first;
+    memory[memorySize].addressInTable = addr;
+    memory[memorySize].lastAccess = 0; // TODO
+}
+
+void denseRandom(int addr){
+    int randomNum = rand() % memorySize;
+
+    pageTable[addr].valid = 1;
+    pageTable[addr].addressInMemory = randomNum;
+    pageTable[memory[randomNum].addressInTable].valid = 0;
+
+    memory[randomNum].addressInTable = addr;
+    memory[randomNum].lastAccess = 0; // TODO
+}  
+
+void denseSecondChance(int addr){
+
+    // Allocate the new page in the table
+    pageTable[addr].valid = 1;
+    pageTable[addr].addressInMemory = memorySize;
+
+    // Find the index of the page that has ref 0 (no second chance, rarely accessed)
+    int index = 0;
+    for(int i = 0; i < memorySize - 1; i++){
+        if(memory[i].ref == 0){
+            index = i;
+            break;
+        }
+        else
+            memory[i].ref = 0;
+    }
+
+    pageTable[memory[index].addressInTable].valid = 0;
+
+    // Update the frame with new information
+    memory[index].addressInTable = addr; 
+    memory[index].lastAccess = 0; // TODO
+
+    // Temporary array with pages in the updated position
+    frame *temp = (frame *)malloc(memorySize * sizeof(frame));
+
+    for(int i = 0; i < memorySize; i++){
+        temp[i].addressInTable = -1;
+        temp[i].changed = 0;
+        temp[i].lastAccess = 0;
+        temp[i].ref = 0; //SECOND CHANCE
+    }
+
+    for(int i = 0; i < memorySize; i++) {
+        temp[i] = memory[(index+1+i) % memorySize];
+    }
+    for (int i = 0; i < memorySize; i++) {
+        memory[i] = temp[i];
+    }
+    free(temp);
+}  
+
+void denseLru(int addr){
+    int index = indexList->first->id;
+    
+    pageTable[addr].valid = 1;
+    pageTable[addr].addressInMemory = index;
+    pageTable[memory[index].addressInTable].valid = 0;
+
+    memory[index].addressInTable = addr;
+    memory[index].lastAccess = 0; // TODO
+
+    node *no = indexList->first;
+    indexList->first = indexList->first->next;
+    indexList->first->prev = NULL;
+    no->next = NULL;
+    no->prev = indexList->last;
+    indexList->last = no;
+}  
+
+void initPageTable(){
+    pageTable = (page *)malloc(pageTableSize * sizeof(page));
+    for(int i = 0; i < pageTableSize; i++){
+        pageTable[i].addressInMemory = -1;
+        pageTable[i].valid = 0;
+    }
+}
+
+void initMemory(){
+    memory = (frame *)malloc(memorySize * sizeof(frame));
+    for(int i = 0; i < memorySize; i++){
+        memory[i].addressInTable = -1;
+        memory[i].changed = 0;
+        memory[i].lastAccess = 0;
+        memory[i].ref = 0; //SECOND CHANCE
+    }
+}
+
+void initAuxList(){
+    indexList = malloc(sizeof(list));
+    indexList->size = 0;
+    indexList->first = NULL;
+    indexList->last = NULL;
+}
+
+void addList(){
+    node *no = malloc(sizeof(node));
+    no->id = currentMemorySize;
+    no->prev = NULL;
+    no->next = NULL;
+
+    if(indexList->size == 0){
+        indexList->first = no;
+        indexList->last = no;
+    }
+    else if(indexList->size == 1){
+        indexList->last = no;
+        indexList->first->next = no;
+        no->prev = indexList->first;
     }
     else{
-        new_page->prev = table->last;
-        table->last->next = new_page;
-        table->last = new_page;
+        no->prev = indexList->last;
+        indexList->last->next = no;
+        indexList->last = no;
     }
-    table->size++;
+    indexList->size++;
 }
 
-void updatePage(page* page_to_update){
-    
-}
+void updateList(int indexInMemory){
+    node *aux = indexList->first;
+    if(indexList->size == 1 || indexList->last->id == indexInMemory)
+        return;
 
-page* checkPage(unsigned addr){
-    page *aux = table->first;
-    for(int i = 0; i < table->size; i++){
-        if(aux->id == addr)
-            return aux;
+    if(indexList->first->id == indexInMemory){
+        indexList->first = aux->next;
+        indexList->first->prev = NULL;
+        aux->next = NULL;
+        aux->prev = indexList->last;
+        indexList->last->next =  aux;
+        indexList->last = aux;
+        return;
+    }
+        
+
+    for(int i = 0; i < indexList->size; i++){
+        if(aux->id == indexInMemory){
+            aux->prev->next = aux->next;
+            aux->next->prev = aux->prev;
+
+            aux->next = NULL;
+            aux->prev = indexList->last;
+            indexList->last->next = aux;
+            indexList->last = aux;
+            return;
+        }
         aux = aux->next;
     }
-    return NULL;
 }
 
+void simulateVirtualMemory(FILE *file, int offset, char *alg){
+    //file read
+    unsigned addr;
+    char rw;
+    int changed = 0;
+    while(fscanf(file,"%x %c",&addr,&rw) != -1){
+        // addr = [p][d]
+        memoryAccess++;
+        int tableAddr = addr >> offset;
+        if(pageTable[tableAddr].valid == 1){
+            memory[pageTable[tableAddr].addressInMemory].ref = 1;
+            if(tolower(rw) == 'w'){
+                memory[pageTable[tableAddr].addressInMemory].changed = 1;
+                memory[pageTable[tableAddr].addressInMemory].lastAccess = 0; //TODO
+            }
 
-void updateAddress(unsigned addr, char* alg, int changed){
-    if(strcmp(alg, "lru") == 0){
-        LRU(addr);
+            //LRU
+            if(strcmp(alg, "lru") == 0)
+                updateList(pageTable[tableAddr].addressInMemory);
+        }
+        else {
+            pageFaults++;
+            if(memorySize > currentMemorySize){
+                pageTable[tableAddr].valid = 1;
+                pageTable[tableAddr].addressInMemory = currentMemorySize;
+
+                memory[currentMemorySize].addressInTable = tableAddr;
+                memory[currentMemorySize].lastAccess = 0; //TODO             
+
+                //LRU
+                if(strcmp(alg, "lru") == 0)
+                    addList();
+                
+                currentMemorySize++;  
+            }
+            else {
+                diskAccess++;
+                if(strcmp(alg, "fifo") == 0){
+                    denseFifo(tableAddr);
+                }
+                else if(strcmp(alg, "lru") == 0){
+                    denseLru(tableAddr);
+                }
+                else if(strcmp(alg, "secondChance") == 0){
+                    denseSecondChance(tableAddr);
+                }
+                else if(strcmp(alg, "random") == 0){
+                    denseRandom(tableAddr);
+                }
+            }
+        }
     }
-    else if(strcmp(alg, "fifo") == 0){
-        FIFO(addr, changed);
-    }
-    else if(strcmp(alg, "2a") == 0){
-        secondChance(addr);
-    }
-    else if(strcmp(alg, "random") == 0){
-        random(addr);
-    }
-}
-
-void LRU(unsigned addr){
-    //TODO
-}
-
-void FIFO(unsigned addr, int changed){
-    // 
-    page *aux = table->first;
-    // 
-    table->first = table->first->next;
-    table->first->prev = NULL;
-    //  
-    table->last->next = aux;
-    aux->prev = table->last;
-    aux->next = NULL;
-    aux->id = addr;
-    table->last = aux;
-
-    if(changed)
-        diskAccess++;
-}
-
-void secondChance(unsigned addr){
-    //TODO
-}
-
-void random(unsigned addr){
-    //TODO
 }
 
 int main(int argc, char* argv[]){
@@ -135,77 +287,52 @@ int main(int argc, char* argv[]){
     char *alg = argv[1]; //lru, second chance, fifo, random
     file = fopen(argv[2], "r"); 
     int pageSize = atoi(argv[3]); // 2 to 64; 2^?
-    int memSize = atoi(argv[4]); //128 to 16384 
+    memorySize = atoi(argv[4]); //128 to 16384 
 
-    int numPages = memSize/pageSize;
+    int numPages = memorySize/pageSize;
     int s = findS_offset(pageSize);
 
-    // alocate tad to virtual memory
-    table = malloc(sizeof(page_table));
-    table->first = NULL;
-    table->last = NULL;
-    table->size = 0;
+    pageTableSize = pow(2, (32 - s));
 
-    //file read
-    unsigned addr;
-    char rw;
-
-    int changed = 0;
-
-    while(fscanf(file,"%x %c",&addr,&rw) != -1){
-        addr = addr >> s;
-        memoryAccess++;
-
-        if(tolower(rw) == 'w'){
-            changed = 1;
-            // check if page exist
-            if(checkPage(addr) == NULL){
-                // faults
-                // add page
-                
-                pageFaults++;
-                if(numPages > table->size)
-                    addPage(addr);
-                else
-                    updateAddress(addr, alg, changed);
-            }
-            else{
-                // just read
-                continue;
-            }
-            
-        }
-        else if(tolower(rw) == 'r'){
-
-            changed = 0;
-            // check if page exist
-            if(checkPage(addr) == NULL){
-                // faults
-                // add page
-                pageFaults++;
-                if(numPages > table->size)
-                    addPage(addr);
-                else
-                    updateAddress(addr, alg, changed);
-            }
-            else{
-                // just read
-                continue;
-            }
-        }
-    }
-
-
-    //final report
-    fclose(file);
     printf("\nExecutando o simulador...\n");
     printf("Arquivo de entrada: %s\n", argv[2]);
-    printf("Tamanho da memoria: %iKB\n", memSize);
+    printf("Tamanho da memoria: %iKB\n", memorySize);
     printf("Tamanho das paginas: %iKB\n", pageSize);
     printf("Tecnica de reposicao: %s\n", alg);
-    printf("Numero de acessos à memória: %i\n", memoryAccess);
-    printf("Paginas lidas: %i\n", pageFaults);
+
+    // alocate tad to virtual memory
+    // simulate virtual memory
+    char *table_structure = argv[5];
+    if(argv[5] == NULL)
+        table_structure = "dense";
+        
+    if(strcmp(table_structure, "2level") == 0){
+        int i;
+    }
+    else if(strcmp(table_structure, "3level") == 0){
+        int i;
+    }
+    else if(strcmp(table_structure, "inverted") == 0){
+        int i;
+    }
+    else if(strcmp(table_structure, "dense") == 0){ //dense
+        initPageTable();
+        initMemory();
+        if(strcmp(alg, "lru") == 0)
+            initAuxList();
+        simulateVirtualMemory(file, s, alg);
+    }
+
+    //final report
+    printf("Numero de acessos a memoria: %i\n", memoryAccess);
+    printf("Paginas lidas(page faults): %i\n", pageFaults);
     printf("Paginas escritas: %i\n", diskAccess);
+    
+    free(pageTable);
+    free(memory);
+    if(strcmp(alg, "lru") == 0)
+            free(indexList);
+    fclose(file);
 
     return 0;
 }
