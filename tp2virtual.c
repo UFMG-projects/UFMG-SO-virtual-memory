@@ -4,7 +4,7 @@
 #include <string.h>
 #include <math.h>
 
-// struct for the page of page table
+// struct for the page of page table DENSE
 // index = address
 typedef struct page{
     int addressInMemory;
@@ -62,9 +62,6 @@ int findS_offset(int PageSize){
     return s;
 }
 
-/*
-first in, first out
-*/
 void denseFifo(int addr){
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = memorySize;
@@ -145,6 +142,7 @@ void denseLru(int addr){
     indexList->first->prev = NULL;
     no->next = NULL;
     no->prev = indexList->last;
+    indexList->last->next = no;
     indexList->last = no;
 }  
 
@@ -202,7 +200,7 @@ void updateList(int indexInMemory){
         return;
 
     if(indexList->first->id == indexInMemory){
-        indexList->first = aux->next;
+        indexList->first = indexList->first->next;
         indexList->first->prev = NULL;
         aux->next = NULL;
         aux->prev = indexList->last;
