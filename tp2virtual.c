@@ -4,7 +4,8 @@
 #include <string.h>
 #include <math.h>
 
-// struct for the page of page table DENSE
+// struct for the page of page table
+// -------------------------------------------- struct DENSE
 // index = address
 typedef struct page{
     int addressInMemory;
@@ -19,6 +20,14 @@ typedef struct frame{
     int ref; //SECOND CHANCE
 }frame;
 
+// -------------------------------------------- struct INVERTED
+typedef struct page_IPT{
+    int addressInMemory;
+    int addressVirtual;
+    int valid; // if exists != -1
+}page_IPT;
+
+// -------------------------------------------- 
 // aux structs
 // lista duplamente encadeada
 typedef struct node{
@@ -34,34 +43,23 @@ typedef struct list{
 } list;
 
 // initialize global
-page *pageTable;
 frame *memory;
-int pageTableSize;
 int memorySize;
 int currentMemorySize;
+
+page *pageTable;
+int pageTableSize;
 list *indexList;
+
+page_IPT *invertedPageTable;
+
 
 // initialize variables for report
 int pageFaults = 0; 
 int diskAccess = 0;
 int memoryAccess = 0;
 
-// function prototypes
-int findS_offset(int PageSize);
-void denseFifo(int addr);
-
-
-// find the number of bits for the offset for find page
-int findS_offset(int PageSize){
-    int s = 0;
-    int tmp = PageSize * 1024;
-    while(tmp > 1){
-        tmp = tmp >> 1;
-        s++;
-    }
-    return s;
-}
-
+// ------------------------------------------------- DENSE -------------------------------------------------
 void denseFifo(int addr){
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = memorySize-1;
@@ -71,7 +69,7 @@ void denseFifo(int addr){
         memory[i] = memory[i+1];
     }
     memory[memorySize-1].addressInTable = addr;
-    memory[memorySize-1].lastAccess = 0; // TODO
+    memory[memorySize-1].lastAccess = memoryAccess; 
 }
 
 void denseRandom(int addr){
@@ -82,7 +80,7 @@ void denseRandom(int addr){
     pageTable[memory[randomNum].addressInTable].valid = 0;
 
     memory[randomNum].addressInTable = addr;
-    memory[randomNum].lastAccess = 0; // TODO
+    memory[randomNum].lastAccess = memoryAccess; 
 }  
 
 void denseSecondChance(int addr){
@@ -105,7 +103,7 @@ void denseSecondChance(int addr){
     }
     
     memory[memorySize-1].addressInTable = addr;
-    memory[memorySize-1].lastAccess = 0;
+    memory[memorySize-1].lastAccess = memoryAccess;
 }  
 
 void denseLru(int addr){
@@ -116,7 +114,7 @@ void denseLru(int addr){
     pageTable[memory[index].addressInTable].valid = 0;
 
     memory[index].addressInTable = addr;
-    memory[index].lastAccess = 0; // TODO
+    memory[index].lastAccess = memoryAccess; 
 
     node *no = indexList->first;
     indexList->first = indexList->first->next;
@@ -127,6 +125,122 @@ void denseLru(int addr){
     indexList->last = no;
 }  
 
+// ------------------------------------------------- INVERTED -------------------------------------------------
+void invertedFifo(int addr){
+    frame aux = memory[0];
+
+    for (int i = 0; i < memorySize - 1; i++){
+        memory[i] = memory[i+1];
+        invertedPageTable[memory[i+1].addressInTable].addressInMemory --;
+    }
+
+    invertedPageTable[aux.addressInTable].addressInMemory = memorySize-1;
+    invertedPageTable[aux.addressInTable].addressVirtual = addr;
+    invertedPageTable[aux.addressInTable].valid = 1;
+    memory[memorySize-1].addressInTable = aux.addressInTable;
+    memory[memorySize-1].lastAccess = memoryAccess; 
+}
+
+void invertedRandom(int addr){
+    int randomNum = rand() % memorySize;
+
+    invertedPageTable[memory[randomNum].addressInTable].addressVirtual = addr;
+    memory[randomNum].lastAccess = memoryAccess;
+}  
+
+void invertedSecondChance(int addr){
+
+    // Find the index of the page that has ref 0 (no second chance, rarely accessed)
+    int index = 0;
+    while (memory[index].ref == 1){
+        memory[index].ref = 0;
+        index = (index + 1) % memorySize;
+    }
+
+    frame aux = memory[index];
+
+    for (int i = index; i < memorySize - 1; i++){
+        memory[i] = memory[i+1];
+        invertedPageTable[memory[i+1].addressInTable].addressInMemory --;
+    }
+
+    invertedPageTable[aux.addressInTable].addressInMemory = memorySize-1;
+    invertedPageTable[aux.addressInTable].addressVirtual = addr;
+    invertedPageTable[aux.addressInTable].valid = 1;
+    memory[memorySize-1].addressInTable = aux.addressInTable;
+    memory[memorySize-1].lastAccess = memoryAccess;
+}  
+
+void invertedLru(int addr){
+
+    int index = indexList->first->id;
+
+    invertedPageTable[memory[index].addressInTable].addressVirtual = addr;
+    memory[index].lastAccess = memoryAccess;
+
+    node *no = indexList->first;
+    indexList->first = indexList->first->next;
+    indexList->first->prev = NULL;
+    no->next = NULL;
+    no->prev = indexList->last;
+    indexList->last->next = no;
+    indexList->last = no;
+}  
+
+int hashFunction(int table_addr){
+    return table_addr % memorySize;
+}
+
+int searchInvertedPageTable(int table_addr){
+    int index = hashFunction(table_addr);
+    if(invertedPageTable[index].addressVirtual == table_addr)
+        return index;
+    
+    int origin_index = index;
+    index++;
+    while (invertedPageTable[index].addressVirtual != table_addr){
+        if(invertedPageTable[index].valid == 0 || index == origin_index)
+             return -1;
+        index = (index + 1) % memorySize;
+    }
+
+    return index;
+}
+
+int addInInvertedPageTable(int table_addr){
+    int index = hashFunction(table_addr);
+    if(!invertedPageTable[index].valid){
+        invertedPageTable[index].valid = 1;
+        invertedPageTable[index].addressInMemory = currentMemorySize;
+        invertedPageTable[index].addressVirtual = table_addr;
+
+        return index;
+    }
+    
+    index++;
+    while (invertedPageTable[index].valid){
+        index = (index + 1) % memorySize;
+    }
+
+    invertedPageTable[index].valid = 1;
+    invertedPageTable[index].addressInMemory = currentMemorySize;
+    invertedPageTable[index].addressVirtual = table_addr;
+
+    return index;
+}
+
+// *************************************** AUX ********************************
+// find the number of bits for the offset for find page
+int findS_offset(int PageSize){
+    int s = 0;
+    int tmp = PageSize * 1024;
+    while(tmp > 1){
+        tmp = tmp >> 1;
+        s++;
+    }
+    return s;
+}
+
 void initPageTable(){
     pageTable = (page *)malloc(pageTableSize * sizeof(page));
     for(int i = 0; i < pageTableSize; i++){
@@ -135,12 +249,21 @@ void initPageTable(){
     }
 }
 
+void initPageTableInverted(){
+    invertedPageTable = (page_IPT *)malloc(memorySize * sizeof(page_IPT));
+    for(int i = 0; i < memorySize; i++){
+        invertedPageTable[i].addressInMemory = -1;
+        invertedPageTable[i].addressVirtual = 0;
+        invertedPageTable[i].valid = 0;
+    }
+}
+
 void initMemory(){
     memory = (frame *)malloc(memorySize * sizeof(frame));
     for(int i = 0; i < memorySize; i++){
         memory[i].addressInTable = -1;
         memory[i].changed = 0;
-        memory[i].lastAccess = 0;
+        memory[i].lastAccess = memoryAccess;
         memory[i].ref = 0; //SECOND CHANCE
     }
 }
@@ -206,11 +329,12 @@ void updateList(int indexInMemory){
     }
 }
 
+
+// *************************************** SIMULATE ********************************
 void simulateVirtualMemory(FILE *file, int offset, char *alg){
     //file read
     unsigned addr;
     char rw;
-    int changed = 0;
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
         
 
@@ -221,7 +345,7 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
             memory[pageTable[tableAddr].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
                 memory[pageTable[tableAddr].addressInMemory].changed = 1;
-                memory[pageTable[tableAddr].addressInMemory].lastAccess = 0; //TODO
+                memory[pageTable[tableAddr].addressInMemory].lastAccess = memoryAccess;
             }
 
             //LRU
@@ -235,7 +359,7 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
                 pageTable[tableAddr].addressInMemory = currentMemorySize;
 
                 memory[currentMemorySize].addressInTable = tableAddr;
-                memory[currentMemorySize].lastAccess = 0; //TODO             
+                memory[currentMemorySize].lastAccess = memoryAccess;             
 
                 //LRU
                 if(strcmp(alg, "lru") == 0)
@@ -262,6 +386,62 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
     }
 }
 
+void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
+    //file read
+    unsigned addr;
+    char rw;
+    while(fscanf(file,"%x %c",&addr,&rw) != -1){
+
+        memoryAccess++;
+        // addr = [p][d]
+        int tableAddr = addr >> offset;
+        int tablePosition = searchInvertedPageTable(tableAddr);
+        if(tablePosition >= 0){
+            
+            memory[invertedPageTable[tablePosition].addressInMemory].ref = 1;
+            if(tolower(rw) == 'w'){
+                memory[invertedPageTable[tablePosition].addressInMemory].changed = 1;
+                memory[invertedPageTable[tablePosition].addressInMemory].lastAccess = memoryAccess;
+            }
+
+            //LRU
+            if(strcmp(alg, "lru") == 0)
+                updateList(invertedPageTable[tablePosition].addressInMemory); 
+        }
+        else {
+            pageFaults++;
+            if(memorySize > currentMemorySize){
+                tablePosition = addInInvertedPageTable(tableAddr);
+
+                memory[currentMemorySize].addressInTable = tablePosition;
+                memory[currentMemorySize].lastAccess = memoryAccess;              
+
+                //LRU
+                if(strcmp(alg, "lru") == 0)
+                    addList();
+                
+                currentMemorySize++;  
+            }
+            else {
+                diskAccess++;
+                if(strcmp(alg, "fifo") == 0){
+                    invertedFifo(tableAddr);
+                }
+                else if(strcmp(alg, "lru") == 0){
+                    invertedLru(tableAddr);
+                }
+                else if(strcmp(alg, "secondChance") == 0){
+                    invertedSecondChance(tableAddr);
+                }
+                else if(strcmp(alg, "random") == 0){
+                    invertedRandom(tableAddr);
+                }
+            }
+        }
+    }
+}
+
+
 int main(int argc, char* argv[]){
     //initialize the 4 arguments
     FILE *file;
@@ -287,6 +467,10 @@ int main(int argc, char* argv[]){
     if(argv[5] == NULL)
         table_structure = "dense";
         
+    initMemory();
+    if(strcmp(alg, "lru") == 0)
+            initAuxList();
+
     if(strcmp(table_structure, "2level") == 0){
         int i;
     }
@@ -294,13 +478,11 @@ int main(int argc, char* argv[]){
         int i;
     }
     else if(strcmp(table_structure, "inverted") == 0){
-        int i;
+        initPageTableInverted();
+        simulateVirtualMemoryInverted(file, s, alg);
     }
-    else if(strcmp(table_structure, "dense") == 0){ //dense
+    else if(strcmp(table_structure, "dense") == 0){ 
         initPageTable();
-        initMemory();
-        if(strcmp(alg, "lru") == 0)
-            initAuxList();
         simulateVirtualMemory(file, s, alg);
     }
 
