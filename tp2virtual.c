@@ -64,14 +64,14 @@ int findS_offset(int PageSize){
 
 void denseFifo(int addr){
     pageTable[addr].valid = 1;
-    pageTable[addr].addressInMemory = memorySize;
+    pageTable[addr].addressInMemory = memorySize-1;
     pageTable[memory[0].addressInTable].valid = 0;
     
     for (int i = 0; i < memorySize - 1; i++){
         memory[i] = memory[i+1];
     }
-    memory[memorySize].addressInTable = addr;
-    memory[memorySize].lastAccess = 0; // TODO
+    memory[memorySize-1].addressInTable = addr;
+    memory[memorySize-1].lastAccess = 0; // TODO
 }
 
 void denseRandom(int addr){
@@ -86,45 +86,26 @@ void denseRandom(int addr){
 }  
 
 void denseSecondChance(int addr){
-
+    
     // Allocate the new page in the table
     pageTable[addr].valid = 1;
-    pageTable[addr].addressInMemory = memorySize;
+    pageTable[addr].addressInMemory = memorySize-1;
 
     // Find the index of the page that has ref 0 (no second chance, rarely accessed)
     int index = 0;
-    for(int i = 0; i < memorySize - 1; i++){
-        if(memory[i].ref == 0){
-            index = i;
-            break;
-        }
-        else
-            memory[i].ref = 0;
+    while (memory[index].ref == 1){
+        memory[index].ref = 0;
+        index = (index + 1) % memorySize;
     }
-
+    
     pageTable[memory[index].addressInTable].valid = 0;
 
-    // Update the frame with new information
-    memory[index].addressInTable = addr; 
-    memory[index].lastAccess = 0; // TODO
-
-    // Temporary array with pages in the updated position
-    frame *temp = (frame *)malloc(memorySize * sizeof(frame));
-
-    for(int i = 0; i < memorySize; i++){
-        temp[i].addressInTable = -1;
-        temp[i].changed = 0;
-        temp[i].lastAccess = 0;
-        temp[i].ref = 0; //SECOND CHANCE
+    for (int i = index; i < memorySize - 1; i++){
+        memory[i] = memory[i+1];
     }
-
-    for(int i = 0; i < memorySize; i++) {
-        temp[i] = memory[(index+1+i) % memorySize];
-    }
-    for (int i = 0; i < memorySize; i++) {
-        memory[i] = temp[i];
-    }
-    free(temp);
+    
+    memory[memorySize-1].addressInTable = addr;
+    memory[memorySize-1].lastAccess = 0;
 }  
 
 void denseLru(int addr){
@@ -231,6 +212,8 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
     char rw;
     int changed = 0;
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
+        
+
         // addr = [p][d]
         memoryAccess++;
         int tableAddr = addr >> offset;
