@@ -4,6 +4,11 @@
 #include <string.h>
 #include <math.h>
 
+
+#define level2_table1_index(addr, offset) ((addr >> (offset + offset / 2)) & ((1 << (offset / 2)) - 1))
+#define level2_table2_index(addr, offset) ((addr >> offset) & ((1 << (offset / 2)) - 1))
+
+
 // struct for the page of page table
 // -------------------------------------------- struct DENSE
 // index = address
@@ -26,6 +31,7 @@ typedef struct page_IPT{
     int addressVirtual;
     int valid; // if exists != -1
 }page_IPT;
+
 
 // -------------------------------------------- 
 // aux structs
@@ -53,6 +59,7 @@ list *indexList;
 
 page_IPT *invertedPageTable;
 
+page **level2PageTable;
 
 // initialize variables for report
 int pageFaults = 0; 
@@ -229,6 +236,97 @@ int addInInvertedPageTable(int table_addr){
     return index;
 }
 
+// ------------------------------------------------- LEVEL2 -------------------------------------------------
+
+void level2Fifo(int addr, int offset){
+
+    int firstLevelIndex = level2_table1_index(addr,offset); 
+    int secondLevelIndex = level2_table2_index(addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 1;
+    level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = memorySize-1;
+
+    int old_addr = memory[0].addressInTable;
+    int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
+    int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+    
+    for (int i = 0; i < memorySize - 1; i++){
+        memory[i] = memory[i+1];
+    }
+    memory[memorySize-1].addressInTable = addr;
+    memory[memorySize-1].lastAccess = memoryAccess; 
+}
+
+void level2Random(int addr, int offset){
+    int randomNum = rand() % memorySize;
+
+    int firstLevelIndex = level2_table1_index(addr,offset); 
+    int secondLevelIndex = level2_table2_index(addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 1;
+    level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = randomNum;
+
+    int old_addr = memory[randomNum].addressInTable;
+    int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
+    int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+
+    memory[randomNum].addressInTable = addr;
+    memory[randomNum].lastAccess = memoryAccess; 
+}  
+
+void level2SecondChance(int addr, int offset){
+
+    int firstLevelIndex = level2_table1_index(addr,offset); 
+    int secondLevelIndex = level2_table2_index(addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 1;
+    level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = memorySize-1;
+
+    // Find the index of the page that has ref 0 (no second chance, rarely accessed)
+    int index = 0;
+    while (memory[index].ref == 1){
+        memory[index].ref = 0;
+        index = (index + 1) % memorySize;
+    }
+
+    int old_addr = memory[index].addressInTable;
+    int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
+    int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+
+    for (int i = index; i < memorySize - 1; i++){
+        memory[i] = memory[i+1];
+    } 
+    memory[memorySize-1].addressInTable = addr;
+    memory[memorySize-1].lastAccess = memoryAccess;
+}  
+
+void level2Lru(int addr, int offset){
+    int index = indexList->first->id;
+    
+    int firstLevelIndex = level2_table1_index(addr,offset); 
+    int secondLevelIndex = level2_table2_index(addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 1;
+    level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = index;
+
+    int old_addr = memory[index].addressInTable;
+    int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
+    int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
+    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+
+    memory[index].addressInTable = addr;
+    memory[index].lastAccess = memoryAccess; 
+
+    node *no = indexList->first;
+    indexList->first = indexList->first->next;
+    indexList->first->prev = NULL;
+    no->next = NULL;
+    no->prev = indexList->last;
+    indexList->last->next = no;
+    indexList->last = no;
+}  
+
+
+
 // *************************************** AUX ********************************
 // find the number of bits for the offset for find page
 int findS_offset(int PageSize){
@@ -255,6 +353,21 @@ void initPageTableInverted(){
         invertedPageTable[i].addressInMemory = -1;
         invertedPageTable[i].addressVirtual = 0;
         invertedPageTable[i].valid = 0;
+    }
+}
+
+void initFirstLevelPageTable() {
+    level2PageTable = (page **)malloc(sqrt(pageTableSize) * sizeof(page *));
+    for (int i = 0; i < sqrt(pageTableSize); i++) {
+        level2PageTable[i] = NULL;
+    }
+}
+
+void initSecondLevelPageTable(int index) {
+    level2PageTable[index] = (page *)malloc(sqrt(pageTableSize) * sizeof(page));
+    for (int i = 0; i < sqrt(pageTableSize); i++) {
+        level2PageTable[index][i].addressInMemory = -1;
+        level2PageTable[index][i].valid = 0;
     }
 }
 
@@ -442,6 +555,68 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
 }
 
 
+// *************************************** SIMULATE ********************************
+void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
+    //file read
+    unsigned addr;
+    char rw;
+    while(fscanf(file,"%x %c",&addr,&rw) != -1){
+        
+        memoryAccess++;
+        
+        int firstLevelIndex = level2_table1_index(addr,offset); 
+        int secondLevelIndex = level2_table2_index(addr,offset);
+
+        if (level2PageTable[firstLevelIndex] == NULL) {
+            initSecondLevelPageTable(firstLevelIndex);
+        }
+
+        if(level2PageTable[firstLevelIndex][secondLevelIndex].valid){
+            memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].ref = 1;
+            if(tolower(rw) == 'w'){
+                memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].changed = 1;
+                memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].lastAccess = memoryAccess;
+            }
+
+            //LRU
+            if(strcmp(alg, "lru") == 0)
+                updateList(level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory);
+        }
+        else {
+            pageFaults++;
+            if(memorySize > currentMemorySize){
+                level2PageTable[firstLevelIndex][secondLevelIndex].valid = 1;
+                level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = currentMemorySize;
+
+                memory[currentMemorySize].addressInTable = addr;
+                memory[currentMemorySize].lastAccess = memoryAccess;             
+
+                //LRU
+                if(strcmp(alg, "lru") == 0)
+                    addList();
+                
+                currentMemorySize++;  
+            }
+            else {
+                diskAccess++;
+                if(strcmp(alg, "fifo") == 0){
+                    level2Fifo(addr, offset);
+                }
+                else if(strcmp(alg, "lru") == 0){
+                    level2Lru(addr, offset);
+                }
+                else if(strcmp(alg, "secondChance") == 0){
+                    level2SecondChance(addr, offset);
+                }
+                else if(strcmp(alg, "random") == 0){
+                    level2Random(addr, offset);
+                }
+            }
+        }
+    }
+}
+
+
 int main(int argc, char* argv[]){
     //initialize the 4 arguments
     FILE *file;
@@ -472,7 +647,8 @@ int main(int argc, char* argv[]){
             initAuxList();
 
     if(strcmp(table_structure, "2level") == 0){
-        int i;
+        initFirstLevelPageTable();
+        simulateVirtualMemory2Level(file, s, alg);
     }
     else if(strcmp(table_structure, "3level") == 0){
         int i;
