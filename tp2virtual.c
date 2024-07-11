@@ -248,7 +248,7 @@ void level2Fifo(int addr, int offset){
     int old_addr = memory[0].addressInTable;
     int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
     int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
-    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+    level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
     
     for (int i = 0; i < memorySize - 1; i++){
         memory[i] = memory[i+1];
@@ -268,7 +268,7 @@ void level2Random(int addr, int offset){
     int old_addr = memory[randomNum].addressInTable;
     int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
     int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
-    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+    level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
 
     memory[randomNum].addressInTable = addr;
     memory[randomNum].lastAccess = memoryAccess; 
@@ -291,7 +291,7 @@ void level2SecondChance(int addr, int offset){
     int old_addr = memory[index].addressInTable;
     int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
     int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
-    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+    level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
 
     for (int i = index; i < memorySize - 1; i++){
         memory[i] = memory[i+1];
@@ -311,7 +311,7 @@ void level2Lru(int addr, int offset){
     int old_addr = memory[index].addressInTable;
     int oldFirstLevelIndex = level2_table1_index(old_addr,offset); 
     int oldSecondLevelIndex = level2_table2_index(old_addr,offset);
-    level2PageTable[firstLevelIndex][secondLevelIndex].valid = 0;
+    level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
 
     memory[index].addressInTable = addr;
     memory[index].lastAccess = memoryAccess; 
