@@ -5,12 +5,12 @@
 #include <math.h>
 
 
-#define LEVEL2_TABLE1_INDEX(addr, offset) ((addr >> (offset + offset / 2)) & ((1 << (offset / 2)) - 1))
-#define LEVEL2_TABLE2_INDEX(addr, offset) ((addr >> offset) & ((1 << (offset / 2)) - 1))
+#define LEVEL2_TABLE1_INDEX(addr, offset) (((addr) >> (offset + secondLevelBits)) & ((1 << firstLevelBits) - 1))
+#define LEVEL2_TABLE2_INDEX(addr, offset) (((addr) >> (offset)) & ((1 << secondLevelBits) - 1))
 
-#define LEVEL3_TABLE1_INDEX(addr, offset) ((addr >> (2 * offset)) & ((1 << offset) - 1))
-#define LEVEL3_TABLE2_INDEX(addr, offset) ((addr >> offset) & ((1 << offset) - 1))
-#define LEVEL3_TABLE3_INDEX(addr, offset) (addr & ((1 << offset) - 1))
+#define LEVEL3_TABLE1_INDEX(addr, offset) (((addr) >> ((offset) + (thirdLevelBits) + (secondLevelBits))) & ((1 << (firstLevelBits)) - 1))
+#define LEVEL3_TABLE2_INDEX(addr, offset) (((addr) >> ((offset) + (thirdLevelBits))) & ((1 << (secondLevelBits)) - 1))
+#define LEVEL3_TABLE3_INDEX(addr, offset) (((addr) >> (offset)) & ((1 << (thirdLevelBits)) - 1))
 
 
 // struct for the page of page table
@@ -64,8 +64,12 @@ list *indexList;
 page_IPT *invertedPageTable;
 
 page **level2PageTable;
+int firstLevelBits;
+int secondLevelBits;
 
 page ***level3PageTable;
+int thirdLevelBits;
+int numBitsEndereco;
 
 // initialize variables for report
 int pageFaults = 0; 
@@ -471,41 +475,55 @@ void initPageTableInverted(){
     }
 }
 
-void initFirstLevelPageTable() {
-    level2PageTable = (page **)malloc(sqrt(pageTableSize) * sizeof(page *));
-    for (int i = 0; i < sqrt(pageTableSize); i++) {
+void initFirstLevelPageTable2Level() {
+    // calculate the size of each level
+    firstLevelBits = numBitsEndereco / 2;
+    secondLevelBits = numBitsEndereco - firstLevelBits;
+    int firstLevelSize = 1 << firstLevelBits;
+    int secondLevelSize = 1 << secondLevelBits;
+
+    level2PageTable = (page **)malloc(firstLevelSize * sizeof(page *));
+    for (int i = 0; i < firstLevelSize; i++) {
         level2PageTable[i] = NULL;
     }
 }
 
-void initSecondLevelPageTable(int index) {
-    level2PageTable[index] = (page *)malloc(sqrt(pageTableSize) * sizeof(page));
-    for (int i = 0; i < sqrt(pageTableSize); i++) {
+void initSecondLevelPageTable2Level(int index) {
+    int secondLevelSize = 1 << secondLevelBits;
+    level2PageTable[index] = (page *)malloc(secondLevelSize * sizeof(page));
+    for (int i = 0; i < secondLevelSize; i++) {
         level2PageTable[index][i].addressInMemory = -1;
         level2PageTable[index][i].valid = 0;
     }
 }
 
 void initFirstLevelPageTable3Level() {
-    int size = (int)ceil(cbrt(pageTableSize)); // raiz cúbica do tamanho total da tabela de páginas
-    level3PageTable = (page ***)malloc(size * sizeof(page **));
-    for (int i = 0; i < size; i++) {
+    // calculate the size of each level
+    firstLevelBits = numBitsEndereco / 3;
+    secondLevelBits = numBitsEndereco / 3;
+    thirdLevelBits = numBitsEndereco - firstLevelBits - secondLevelBits;
+    int firstLevelSize = 1 << firstLevelBits;
+    int secondLevelSize = 1 << secondLevelBits;
+    int thirdLevelSize = 1 << thirdLevelBits;
+
+    level3PageTable = (page ***)malloc(firstLevelSize * sizeof(page **));
+    for (int i = 0; i < firstLevelSize; i++) {
         level3PageTable[i] = NULL;
     }
 }
 
 void initSecondLevelPageTable3Level(int firstLevelIndex) {
-    int size = (int)ceil(cbrt(pageTableSize)); // raiz cúbica do tamanho total da tabela de páginas
-    level3PageTable[firstLevelIndex] = (page **)malloc(size * sizeof(page *));
-    for (int i = 0; i < size; i++) {
+    int secondLevelSize = 1 << secondLevelBits;
+    level3PageTable[firstLevelIndex] = (page **)malloc(secondLevelSize * sizeof(page *));
+    for (int i = 0; i < secondLevelSize; i++) {
         level3PageTable[firstLevelIndex][i] = NULL;
     }
 }
 
 void initThirdLevelPageTable3Level(int firstLevelIndex, int secondLevelIndex) {
-    int size = (int)ceil(cbrt(pageTableSize)); // raiz cúbica do tamanho total da tabela de páginas
-    level3PageTable[firstLevelIndex][secondLevelIndex] = (page *)malloc(size * sizeof(page));
-    for (int i = 0; i < size; i++) {
+    int thirdLevelSize = 1 << thirdLevelBits;
+    level3PageTable[firstLevelIndex][secondLevelIndex] = (page *)malloc(thirdLevelSize * sizeof(page));
+    for (int i = 0; i < thirdLevelSize; i++) {
         level3PageTable[firstLevelIndex][secondLevelIndex][i].addressInMemory = -1;
         level3PageTable[firstLevelIndex][secondLevelIndex][i].valid = 0;
     }
@@ -698,15 +716,19 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
     //file read
     unsigned addr;
     char rw;
+
+    int firstLevelIndex;
+    int secondLevelIndex;
+
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
         
         memoryAccess++;
-        
-        int firstLevelIndex = LEVEL2_TABLE1_INDEX(addr,offset); 
-        int secondLevelIndex = LEVEL2_TABLE2_INDEX(addr,offset);
+
+        firstLevelIndex = LEVEL2_TABLE1_INDEX(addr,offset); 
+        secondLevelIndex = LEVEL2_TABLE2_INDEX(addr,offset);
 
         if (level2PageTable[firstLevelIndex] == NULL) {
-            initSecondLevelPageTable(firstLevelIndex);
+            initSecondLevelPageTable2Level(firstLevelIndex);
         }
 
         if(level2PageTable[firstLevelIndex][secondLevelIndex].valid){
@@ -824,7 +846,8 @@ int main(int argc, char* argv[]){
     int numPages = memorySize/pageSize;
     int s = findS_offset(pageSize);
 
-    pageTableSize = pow(2, (32 - s));
+    numBitsEndereco = 32 - s;
+    pageTableSize = pow(2, (numBitsEndereco));
 
     printf("\nExecutando o simulador...\n");
     printf("Arquivo de entrada: %s\n", argv[2]);
@@ -843,7 +866,7 @@ int main(int argc, char* argv[]){
             initAuxList();
 
     if(strcmp(table_structure, "2level") == 0){
-        initFirstLevelPageTable();
+        initFirstLevelPageTable2Level();
         simulateVirtualMemory2Level(file, s, alg);
     }
     else if(strcmp(table_structure, "3level") == 0){
