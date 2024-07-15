@@ -35,6 +35,7 @@ typedef struct page_IPT{
     int addressInMemory;
     int addressVirtual;
     int valid; // if exists != -1
+    int changed;
 }page_IPT;
 
 
@@ -85,10 +86,11 @@ int dirtyPages = 0;
 void denseFifo(int addr){
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = memorySize-1;
-    // if(pageTable[memory[0].addressInTable].changed){
-    //     dirtyPages++;
-    //     pageTable[memory[0].addressInTable].changed = 0;
-    // } //TODO
+    
+    if(pageTable[memory[0].addressInTable].changed){
+        dirtyPages++;
+        pageTable[memory[0].addressInTable].changed = 0;
+    }
     pageTable[memory[0].addressInTable].valid = 0;
     
     for (int i = 0; i < memorySize - 1; i++){
@@ -102,6 +104,11 @@ void denseRandom(int addr){
     int randomNum = rand() % memorySize;
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = randomNum;
+
+    if(pageTable[memory[randomNum].addressInTable].changed){
+        dirtyPages++;
+        pageTable[memory[randomNum].addressInTable].changed = 0;
+    }
     pageTable[memory[randomNum].addressInTable].valid = 0;
 
     memory[randomNum].addressInTable = addr;
@@ -121,6 +128,10 @@ void denseSecondChance(int addr){
         index = (index + 1) % memorySize;
     }
     
+    if(pageTable[memory[index].addressInTable].changed){
+        dirtyPages++;
+        pageTable[memory[index].addressInTable].changed = 0;
+    }
     pageTable[memory[index].addressInTable].valid = 0;
 
     for (int i = index; i < memorySize - 1; i++){
@@ -136,6 +147,11 @@ void denseLru(int addr){
     
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = index;
+
+    if(pageTable[memory[index].addressInTable].changed){
+        dirtyPages++;
+        pageTable[memory[index].addressInTable].changed = 0;
+    }
     pageTable[memory[index].addressInTable].valid = 0;
 
     memory[index].addressInTable = addr;
@@ -266,6 +282,10 @@ void level2Fifo(int addr, int offset){
     int old_addr = memory[0].addressInTable;
     int oldFirstLevelIndex = LEVEL2_TABLE1_INDEX(old_addr,offset); 
     int oldSecondLevelIndex = LEVEL2_TABLE2_INDEX(old_addr,offset);
+    if(level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed){
+        dirtyPages++;
+        level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed = 0;
+    }
     level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
     
     for (int i = 0; i < memorySize - 1; i++){
@@ -286,6 +306,10 @@ void level2Random(int addr, int offset){
     int old_addr = memory[randomNum].addressInTable;
     int oldFirstLevelIndex = LEVEL2_TABLE1_INDEX(old_addr,offset); 
     int oldSecondLevelIndex = LEVEL2_TABLE2_INDEX(old_addr,offset);
+    if(level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed){
+        dirtyPages++;
+        level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed = 0;
+    }
     level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
 
     memory[randomNum].addressInTable = addr;
@@ -309,6 +333,10 @@ void level2SecondChance(int addr, int offset){
     int old_addr = memory[index].addressInTable;
     int oldFirstLevelIndex = LEVEL2_TABLE1_INDEX(old_addr,offset); 
     int oldSecondLevelIndex = LEVEL2_TABLE2_INDEX(old_addr,offset);
+    if(level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed){
+        dirtyPages++;
+        level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed = 0;
+    }
     level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
 
     for (int i = index; i < memorySize - 1; i++){
@@ -329,6 +357,10 @@ void level2Lru(int addr, int offset){
     int old_addr = memory[index].addressInTable;
     int oldFirstLevelIndex = LEVEL2_TABLE1_INDEX(old_addr,offset); 
     int oldSecondLevelIndex = LEVEL2_TABLE2_INDEX(old_addr,offset);
+    if(level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed){
+        dirtyPages++;
+        level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed = 0;
+    }
     level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
 
     memory[index].addressInTable = addr;
@@ -358,7 +390,11 @@ void level3Fifo(int addr, int offset){
     int oldFirstLevelIndex = LEVEL3_TABLE1_INDEX(old_addr, offset); 
     int oldSecondLevelIndex = LEVEL3_TABLE2_INDEX(old_addr, offset);
     int oldThirdLevelIndex = LEVEL3_TABLE3_INDEX(old_addr, offset);
-    
+
+    if(level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed){
+        dirtyPages++;
+        level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed = 0;
+    }
     level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].valid = 0;
 
     for (int i = 0; i < memorySize - 1; i++){
@@ -384,7 +420,11 @@ void level3Random(int addr, int offset){
     int oldFirstLevelIndex = LEVEL3_TABLE1_INDEX(old_addr, offset); 
     int oldSecondLevelIndex = LEVEL3_TABLE2_INDEX(old_addr, offset);
     int oldThirdLevelIndex = LEVEL3_TABLE3_INDEX(old_addr, offset);
-    
+
+    if(level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed){
+        dirtyPages++;
+        level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed = 0;
+    }
     level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].valid = 0;
 
     memory[randomNum].addressInTable = addr;
@@ -412,6 +452,10 @@ void level3SecondChance(int addr, int offset){
     int oldSecondLevelIndex = LEVEL3_TABLE2_INDEX(old_addr, offset);
     int oldThirdLevelIndex = LEVEL3_TABLE3_INDEX(old_addr, offset);
     
+    if(level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed){
+        dirtyPages++;
+        level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed = 0;
+    }
     level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].valid = 0;
 
     for (int i = index; i < memorySize - 1; i++){
@@ -438,6 +482,10 @@ void level3Lru(int addr, int offset){
     int oldSecondLevelIndex = LEVEL3_TABLE2_INDEX(old_addr, offset);
     int oldThirdLevelIndex = LEVEL3_TABLE3_INDEX(old_addr, offset);
     
+    if(level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed){
+        dirtyPages++;
+        level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed = 0;
+    }
     level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].valid = 0;
 
     memory[index].addressInTable = addr;
@@ -471,7 +519,7 @@ void initPageTable(){
     for(int i = 0; i < pageTableSize; i++){
         pageTable[i].addressInMemory = -1;
         pageTable[i].valid = 0;
-        //pageTable[i].changed = 0; //TODO
+        pageTable[i].changed = 0;
     }
 }
 
@@ -479,8 +527,9 @@ void initPageTableInverted(){
     invertedPageTable = (page_IPT *)malloc(memorySize * sizeof(page_IPT));
     for(int i = 0; i < memorySize; i++){
         invertedPageTable[i].addressInMemory = -1;
-        invertedPageTable[i].addressVirtual = 0;
+        invertedPageTable[i].addressVirtual = -1;
         invertedPageTable[i].valid = 0;
+        invertedPageTable[i].changed = 0;
     }
 }
 
@@ -503,6 +552,7 @@ void initSecondLevelPageTable2Level(int index) {
     for (int i = 0; i < secondLevelSize; i++) {
         level2PageTable[index][i].addressInMemory = -1;
         level2PageTable[index][i].valid = 0;
+        level2PageTable[index][i].changed = 0;
     }
 }
 
@@ -535,6 +585,7 @@ void initThirdLevelPageTable3Level(int firstLevelIndex, int secondLevelIndex) {
     for (int i = 0; i < thirdLevelSize; i++) {
         level3PageTable[firstLevelIndex][secondLevelIndex][i].addressInMemory = -1;
         level3PageTable[firstLevelIndex][secondLevelIndex][i].valid = 0;
+        level3PageTable[firstLevelIndex][secondLevelIndex][i].changed = 0;
     }
 }
 
@@ -628,9 +679,14 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
         if(pageTable[tableAddr].valid == 1){
             memory[pageTable[tableAddr].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
-                memory[pageTable[tableAddr].addressInMemory].changed = 1;
-                //pageTable[tableAddr].changed = 1; //TODO
+                pageTable[tableAddr].changed = 1; 
                 memory[pageTable[tableAddr].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(pageTable[tableAddr].changed)
+                    pageTable[tableAddr].changed = 1;
+                else
+                    pageTable[tableAddr].changed = 0;
             }
 
             //LRU
@@ -667,6 +723,17 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
                 else if(strcmp(alg, "random") == 0){
                     denseRandom(tableAddr);
                 }
+            }
+
+            if(tolower(rw) == 'w'){
+                pageTable[tableAddr].changed = 1; 
+                memory[pageTable[tableAddr].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(pageTable[tableAddr].changed)
+                    pageTable[tableAddr].changed = 1;
+                else
+                    pageTable[tableAddr].changed = 0;
             }
         }
     }
@@ -758,8 +825,14 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
         if(level2PageTable[firstLevelIndex][secondLevelIndex].valid){
             memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
-                memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].changed = 1;
+                level2PageTable[firstLevelIndex][secondLevelIndex].changed = 1; 
                 memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(level2PageTable[firstLevelIndex][secondLevelIndex].changed)
+                    level2PageTable[firstLevelIndex][secondLevelIndex].changed = 1;
+                else
+                    level2PageTable[firstLevelIndex][secondLevelIndex].changed = 0;
             }
 
             //LRU
@@ -796,6 +869,17 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
                     level2Random(addr, offset);
                 }
             }
+
+            if(tolower(rw) == 'w'){
+                level2PageTable[firstLevelIndex][secondLevelIndex].changed = 1; 
+                memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(level2PageTable[firstLevelIndex][secondLevelIndex].changed)
+                    level2PageTable[firstLevelIndex][secondLevelIndex].changed = 1;
+                else
+                    level2PageTable[firstLevelIndex][secondLevelIndex].changed = 0;
+            }
         }
     }
 }
@@ -826,9 +910,15 @@ void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
 
         if (level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].valid) {
             memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].ref = 1;
-            if (tolower(rw) == 'w') {
-                memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].changed = 1;
+            if(tolower(rw) == 'w'){
+                level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 1; 
                 memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed)
+                    level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 1;
+                else
+                    level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 0;
             }
 
             if (strcmp(alg, "lru") == 0) {
@@ -859,6 +949,17 @@ void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
                 } else if (strcmp(alg, "random") == 0) {
                     level3Random(addr, offset);
                 }
+            }
+
+            if(tolower(rw) == 'w'){
+                level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 1; 
+                memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed)
+                    level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 1;
+                else
+                    level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 0;
             }
         }
     }
