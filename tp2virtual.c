@@ -19,12 +19,13 @@
 typedef struct page{
     int addressInMemory;
     int valid; // if exists != -1
+    int changed;
 }page;
 
 // struct for frame
 typedef struct frame{
     int addressInTable;
-    int changed;
+    int changed; //TODO
     int lastAccess;
     int ref; //SECOND CHANCE
 }frame;
@@ -72,14 +73,22 @@ int thirdLevelBits;
 int numBitsEndereco;
 
 // initialize variables for report
+int memoryCompleteSize;
 int pageFaults = 0; 
 int diskAccess = 0;
 int memoryAccess = 0;
+int memoryAccessRead = 0;
+int memoryAccessWrite = 0;
+int dirtyPages = 0;
 
 // ------------------------------------------------- DENSE -------------------------------------------------
 void denseFifo(int addr){
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = memorySize-1;
+    // if(pageTable[memory[0].addressInTable].changed){
+    //     dirtyPages++;
+    //     pageTable[memory[0].addressInTable].changed = 0;
+    // } //TODO
     pageTable[memory[0].addressInTable].valid = 0;
     
     for (int i = 0; i < memorySize - 1; i++){
@@ -91,7 +100,6 @@ void denseFifo(int addr){
 
 void denseRandom(int addr){
     int randomNum = rand() % memorySize;
-
     pageTable[addr].valid = 1;
     pageTable[addr].addressInMemory = randomNum;
     pageTable[memory[randomNum].addressInTable].valid = 0;
@@ -463,6 +471,7 @@ void initPageTable(){
     for(int i = 0; i < pageTableSize; i++){
         pageTable[i].addressInMemory = -1;
         pageTable[i].valid = 0;
+        //pageTable[i].changed = 0; //TODO
     }
 }
 
@@ -608,14 +617,19 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
     char rw;
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
         
-
         // addr = [p][d]
         memoryAccess++;
+        if(tolower(rw) == 'w')
+            memoryAccessWrite++;
+        else
+            memoryAccessRead++;
+
         int tableAddr = addr >> offset;
         if(pageTable[tableAddr].valid == 1){
             memory[pageTable[tableAddr].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
                 memory[pageTable[tableAddr].addressInMemory].changed = 1;
+                //pageTable[tableAddr].changed = 1; //TODO
                 memory[pageTable[tableAddr].addressInMemory].lastAccess = memoryAccess;
             }
 
@@ -625,6 +639,7 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
         }
         else {
             pageFaults++;
+
             if(memorySize > currentMemorySize){
                 pageTable[tableAddr].valid = 1;
                 pageTable[tableAddr].addressInMemory = currentMemorySize;
@@ -664,6 +679,11 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
 
         memoryAccess++;
+        if(tolower(rw) == 'w')
+            memoryAccessWrite++;
+        else
+            memoryAccessRead++;
+
         // addr = [p][d]
         int tableAddr = addr >> offset;
         int tablePosition = searchInvertedPageTable(tableAddr);
@@ -723,6 +743,10 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
     while(fscanf(file,"%x %c",&addr,&rw) != -1){
         
         memoryAccess++;
+        if(tolower(rw) == 'w')
+            memoryAccessWrite++;
+        else
+            memoryAccessRead++;
 
         firstLevelIndex = LEVEL2_TABLE1_INDEX(addr,offset); 
         secondLevelIndex = LEVEL2_TABLE2_INDEX(addr,offset);
@@ -779,8 +803,14 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
 void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
     unsigned addr;
     char rw;
+
     while (fscanf(file, "%x %c", &addr, &rw) != -1) {
+        
         memoryAccess++;
+        if(tolower(rw) == 'w')
+            memoryAccessWrite++;
+        else
+            memoryAccessRead++;
 
         int firstLevelIndex = LEVEL3_TABLE1_INDEX(addr, offset);
         int secondLevelIndex = LEVEL3_TABLE2_INDEX(addr, offset);
@@ -836,31 +866,41 @@ void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
 
 
 int main(int argc, char* argv[]){
+    printf("\nParametros:\n argv[1]: algoritmo(fifo, random, lru, secondChance) \n argv[2]: file_path\n argv[3]: page_size\n argv[4]: memory_size\n argv[5](opcional): table_structure(dense*, 2level, 3level, inverted)\n\n");
     //initialize the 4 arguments
     FILE *file;
     char *alg = argv[1]; //lru, second chance, fifo, random
     file = fopen(argv[2], "r"); 
     int pageSize = atoi(argv[3]); // 2 to 64; 2^?
-    memorySize = atoi(argv[4]); //128 to 16384 
+    memoryCompleteSize = atoi(argv[4]); //128 to 16384 
 
-    int numPages = memorySize/pageSize;
+    //memory size is the the number of pages in the memory
+    memorySize = memoryCompleteSize/pageSize;
     int s = findS_offset(pageSize);
 
     numBitsEndereco = 32 - s;
     pageTableSize = pow(2, (numBitsEndereco));
+    
+    //verify alg
+    if(strcmp(alg, "fifo") != 0 && strcmp(alg, "random") != 0 && strcmp(alg, "lru") != 0 && strcmp(alg, "secondChance") != 0){
+        printf("ERRO: Coloque um algoritmo valido: fifo, random, lru, secondChance\n");
+        return 0;
+    }
 
-    printf("\nExecutando o simulador...\n");
+    
+    char *table_structure = argv[5];
+    if(argv[5] == NULL)
+        table_structure = "dense";
+
+    printf("\n--------------------------------\nExecutando o simulador...\n\n");
     printf("Arquivo de entrada: %s\n", argv[2]);
     printf("Tamanho da memoria: %iKB\n", memorySize);
     printf("Tamanho das paginas: %iKB\n", pageSize);
     printf("Tecnica de reposicao: %s\n", alg);
+    printf("Estrutura da tabela: %s\n\n", table_structure);
 
     // alocate tad to virtual memory
     // simulate virtual memory
-    char *table_structure = argv[5];
-    if(argv[5] == NULL)
-        table_structure = "dense";
-        
     initMemory();
     if(strcmp(alg, "lru") == 0)
             initAuxList();
@@ -884,8 +924,10 @@ int main(int argc, char* argv[]){
 
     //final report
     printf("Numero de acessos a memoria: %i\n", memoryAccess);
-    printf("Paginas lidas(page faults): %i\n", pageFaults);
-    printf("Paginas escritas: %i\n", diskAccess);
+    printf("Numero de acessos de escrita: %i\n", memoryAccessWrite);
+    printf("Numero de acessos de leitura: %i\n", memoryAccessRead);
+    printf("Page Faults: %i\n", pageFaults);
+    printf("Paginas Sujas: %i\n", dirtyPages);
     
     free(pageTable);
     free(memory);
