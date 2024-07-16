@@ -64,6 +64,7 @@ int currentMemorySize;
 page *pageTable;
 int pageTableSize;
 list *indexList;
+list *circularList;
 
 page_IPT *invertedPageTable;
 
@@ -118,31 +119,31 @@ void denseRandom(int addr){
 }  
 
 void denseSecondChance(int addr){
-    //considere que a memoria é um vetor circular para facilitar entendimento
+    //buscar desde o indice de segunda chance até o ref
+    node *index = circularList->first;
+    while(memory[index->id].ref == 1){
+        memory[index->id].ref = 0;
+        index = index->next;
+    }
+
+    //ativar endereço passado
     pageTable[addr].valid = 1;
-    pageTable[addr].addressInMemory = memorySize-1;
+    pageTable[addr].addressInMemory = index->id;
 
-    //na primeira posição sempre vai estar o proximo do ultimo adicionado
-    //buscar o index do ref == 0
-    int index = 0;
-    while (memory[index].ref == 1){
-        memory[index].ref = 0;
-        index = (index + 1) % memorySize;
-    }
-    
-    //desativar endereço do index encontrado
-    if(pageTable[memory[index].addressInTable].changed){
+    //desativar endereço que estava na posição
+    if(pageTable[memory[index->id].addressInTable].changed){
         dirtyPages++;
-        pageTable[memory[index].addressInTable].changed = 0;
+        pageTable[memory[index->id].addressInTable].changed = 0;
     }
-    pageTable[memory[index].addressInTable].valid = 0;
-
-    //reordenar memória 
-    rotateMemoryIndexInLast(index);
+    pageTable[memory[index->id].addressInTable].valid = 0;
     
     //subsituir novo endereço na memória rearranjada
-    memory[memorySize-1].addressInTable = addr;
-    memory[memorySize-1].lastAccess = memoryAccess;
+    memory[index->id].addressInTable = addr;
+    memory[index->id].lastAccess = memoryAccess;
+
+    //rotacionar lista circular
+    circularList->first = index->next;
+    circularList->first = index;
 }  
 
 void denseLru(int addr){
@@ -205,32 +206,33 @@ int invertedRandom(int addr){
 }  
 
 int invertedSecondChance(int addr){
-
-    // Find the index of the page that has ref 0 (no second chance, rarely accessed)
-    int index = 0;
-    while (memory[index].ref == 1){
-        memory[index].ref = 0;
-        index = (index + 1) % memorySize;
+     //buscar desde o indice de segunda chance até o ref
+    node *index = circularList->first;
+    while(memory[index->id].ref == 1){
+        memory[index->id].ref = 0;
+        index = index->next;
     }
 
-    frame aux = memory[index];
+    //ativar endereço passado
+    invertedPageTable[memory[index->id].addressInTable].addressInMemory = index->id;
+    invertedPageTable[memory[index->id].addressInTable].addressVirtual = addr;
 
-    for (int i = index; i < memorySize - 1; i++){
-        memory[i] = memory[i+1];
-        invertedPageTable[memory[i+1].addressInTable].addressInMemory --;
-    }
-
-    invertedPageTable[aux.addressInTable].addressInMemory = memorySize-1;
-    invertedPageTable[aux.addressInTable].addressVirtual = addr;
-    if(invertedPageTable[aux.addressInTable].changed){
+    //desativar endereço que estava na posição
+    if(invertedPageTable[memory[index->id].addressInTable].changed){
         dirtyPages++;
-        invertedPageTable[aux.addressInTable].changed = 0;
+        invertedPageTable[memory[index->id].addressInTable].changed = 0;
     }
-    invertedPageTable[aux.addressInTable].valid = 1;
-    memory[memorySize-1].addressInTable = aux.addressInTable;
-    memory[memorySize-1].lastAccess = memoryAccess;
+    invertedPageTable[memory[index->id].addressInTable].valid = 1;
+    
+    //subsituir novo endereço na memória rearranjada
+    memory[index->id].addressInTable = memory[index->id].addressInTable;
+    memory[index->id].lastAccess = memoryAccess;
 
-    return aux.addressInTable;
+    //rotacionar lista circular
+    circularList->first = index->next;
+    circularList->first = index;
+
+    return memory[index->id].addressInTable;
 }  
 
 int invertedLru(int addr){
@@ -312,20 +314,21 @@ void level2Random(int addr, int offset){
 }  
 
 void level2SecondChance(int addr, int offset){
+    //buscar desde o indice de segunda chance até o ref
+    node *index = circularList->first;
+    while(memory[index->id].ref == 1){
+        memory[index->id].ref = 0;
+        index = index->next;
+    }
 
+    //ativar endereço passado
     int firstLevelIndex = LEVEL2_TABLE1_INDEX(addr,offset); 
     int secondLevelIndex = LEVEL2_TABLE2_INDEX(addr,offset);
     level2PageTable[firstLevelIndex][secondLevelIndex].valid = 1;
-    level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = memorySize-1;
+    level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory = index->id;
 
-    // Find the index of the page that has ref 0 (no second chance, rarely accessed)
-    int index = 0;
-    while (memory[index].ref == 1){
-        memory[index].ref = 0;
-        index = (index + 1) % memorySize;
-    }
-
-    int old_addr = memory[index].addressInTable;
+    //desativar endereço que estava na posição
+    int old_addr = memory[index->id].addressInTable;
     int oldFirstLevelIndex = LEVEL2_TABLE1_INDEX(old_addr,offset); 
     int oldSecondLevelIndex = LEVEL2_TABLE2_INDEX(old_addr,offset);
     if(level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed){
@@ -333,12 +336,14 @@ void level2SecondChance(int addr, int offset){
         level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].changed = 0;
     }
     level2PageTable[oldFirstLevelIndex][oldSecondLevelIndex].valid = 0;
+    
+    //subsituir novo endereço na memória rearranjada
+    memory[index->id].addressInTable = addr;
+    memory[index->id].lastAccess = memoryAccess;
 
-    for (int i = index; i < memorySize - 1; i++){
-        memory[i] = memory[i+1];
-    } 
-    memory[memorySize-1].addressInTable = addr;
-    memory[memorySize-1].lastAccess = memoryAccess;
+    //rotacionar lista circular
+    circularList->first = index->next;
+    circularList->first = index;
 }  
 
 void level2Lru(int addr, int offset){
@@ -428,37 +433,38 @@ void level3Random(int addr, int offset){
 
 // Algoritmo Second Chance para 3 níveis
 void level3SecondChance(int addr, int offset){
+    //buscar desde o indice de segunda chance até o ref
+    node *index = circularList->first;
+    while(memory[index->id].ref == 1){
+        memory[index->id].ref = 0;
+        index = index->next;
+    }
+
+    //ativar endereço passado
     int firstLevelIndex = LEVEL3_TABLE1_INDEX(addr, offset);
     int secondLevelIndex = LEVEL3_TABLE2_INDEX(addr, offset);
     int thirdLevelIndex = LEVEL3_TABLE3_INDEX(addr, offset);
-    
     level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].valid = 1;
-    level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory = memorySize - 1;
+    level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory = index->id;
 
-    // Encontrar o índice da página que tem ref 0 (sem segunda chance, raramente acessada)
-    int index = 0;
-    while (memory[index].ref == 1){
-        memory[index].ref = 0;
-        index = (index + 1) % memorySize;
-    }
-
-    int old_addr = memory[index].addressInTable;
+    //desativar endereço que estava na posição
+    int old_addr = memory[index->id].addressInTable;
     int oldFirstLevelIndex = LEVEL3_TABLE1_INDEX(old_addr, offset); 
     int oldSecondLevelIndex = LEVEL3_TABLE2_INDEX(old_addr, offset);
     int oldThirdLevelIndex = LEVEL3_TABLE3_INDEX(old_addr, offset);
-    
     if(level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed){
         dirtyPages++;
         level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].changed = 0;
     }
     level3PageTable[oldFirstLevelIndex][oldSecondLevelIndex][oldThirdLevelIndex].valid = 0;
-
-    for (int i = index; i < memorySize - 1; i++){
-        memory[i] = memory[i + 1];
-    }
     
-    memory[memorySize - 1].addressInTable = addr;
-    memory[memorySize - 1].lastAccess = memoryAccess;
+    //subsituir novo endereço na memória rearranjada
+    memory[index->id].addressInTable = addr;
+    memory[index->id].lastAccess = memoryAccess;
+
+    //rotacionar lista circular
+    circularList->first = index->next;
+    circularList->first = index;
 }
 
 // Algoritmo LRU para 3 níveis
@@ -594,11 +600,11 @@ void initMemory(){
     }
 }
 
-void initAuxList(){
-    indexList = malloc(sizeof(list));
-    indexList->size = 0;
-    indexList->first = NULL;
-    indexList->last = NULL;
+void initAuxList(list **lista){
+    *lista = malloc(sizeof(list));
+    (*lista)->size = 0;
+    (*lista)->first = NULL;
+    (*lista)->last = NULL;
 }
 
 void addList(){
@@ -655,29 +661,30 @@ void updateList(int indexInMemory){
     }
 }
 
-void rotateMemoryIndexInLast(int index){
-    // Aloca memória para o array temporário
-    frame* temp = (frame*)malloc(memorySize * sizeof(frame));
-    if(temp == NULL){
-        perror("Erro ao alocar memória");
-        exit(EXIT_FAILURE);
+void addCircularList(){
+    node *no = malloc(sizeof(node));
+    no->id = currentMemorySize;
+    no->prev = NULL;
+    no->next = circularList->first; //ele vai ser o ultimo e tem que apontar pro primeiro
+
+    if(circularList->size == 0){
+        circularList->first = no;
+        circularList->last = no;
     }
-
-    // Copiar elementos
-    int i, j = (index + 1) % memorySize;
-    for(i = 0; i < memorySize; i++){
-        temp[i] = memory[j];
-        j = (j + 1) % memorySize;
+    else if(circularList->size == 1){
+        circularList->last = no;
+        circularList->first->next = no;
+        circularList->first->prev = no;
+        no->prev = circularList->first;
     }
-
-    // Atualizar o array original
-    for(i = 0; i < memorySize; i++)
-        memory[i] = temp[i];
-
-    // Libera a memória alocada para o array temporário
-    free(temp);
+    else{
+        no->prev = circularList->last;
+        circularList->last->next = no;
+        circularList->last = no;
+        circularList->first->prev = no;
+    }
+    circularList->size++;
 }
-
 
 // *************************************** SIMULATE ********************************
 void simulateVirtualMemory(FILE *file, int offset, char *alg){
@@ -695,7 +702,6 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
 
         int tableAddr = addr >> offset;
         if(pageTable[tableAddr].valid == 1){
-            memory[pageTable[tableAddr].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
                 pageTable[tableAddr].changed = 1; 
                 memory[pageTable[tableAddr].addressInMemory].lastAccess = memoryAccess;
@@ -718,13 +724,15 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
                 pageTable[tableAddr].valid = 1;
                 pageTable[tableAddr].addressInMemory = currentMemorySize;
 
-                memory[pageTable[tableAddr].addressInMemory].ref = 0;
                 memory[currentMemorySize].addressInTable = tableAddr;
-                memory[currentMemorySize].lastAccess = memoryAccess;             
+                memory[currentMemorySize].lastAccess = memoryAccess;
 
                 //LRU
                 if(strcmp(alg, "lru") == 0)
                     addList();
+                //SECONDCHANCE
+                if(strcmp(alg, "secondChance") == 0)
+                    addCircularList();
                 
                 currentMemorySize++;  
             }
@@ -755,6 +763,7 @@ void simulateVirtualMemory(FILE *file, int offset, char *alg){
                     pageTable[tableAddr].changed = 0;
             }
         }
+        memory[pageTable[tableAddr].addressInMemory].ref = 1;
     }
 }
 
@@ -775,8 +784,6 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
         int tablePosition = searchInvertedPageTable(tableAddr);
 
         if(tablePosition >= 0){
-            
-            memory[invertedPageTable[tablePosition].addressInMemory].ref = 1;
 
             if(tolower(rw) == 'w'){
                 invertedPageTable[tablePosition].changed = 1; 
@@ -806,7 +813,11 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
                 //LRU
                 if(strcmp(alg, "lru") == 0)
                     addList();
-                
+
+                //SECONDCHANCE
+                if(strcmp(alg, "secondChance") == 0)
+                    addCircularList();
+
                 tablePosition = currentMemorySize;
 
                 currentMemorySize++;  
@@ -839,6 +850,8 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
             }
             
         }
+        
+        memory[invertedPageTable[tablePosition].addressInMemory].ref = 1;
     }
 }
 
@@ -866,7 +879,6 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
         }
 
         if(level2PageTable[firstLevelIndex][secondLevelIndex].valid){
-            memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
                 level2PageTable[firstLevelIndex][secondLevelIndex].changed = 1; 
                 memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].lastAccess = memoryAccess;
@@ -895,6 +907,10 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
                 if(strcmp(alg, "lru") == 0)
                     addList();
                 
+                //SECONDCHANCE
+                if(strcmp(alg, "secondChance") == 0)
+                    addCircularList();
+
                 currentMemorySize++;  
             }
             else {
@@ -924,6 +940,7 @@ void simulateVirtualMemory2Level(FILE *file, int offset, char *alg){
                     level2PageTable[firstLevelIndex][secondLevelIndex].changed = 0;
             }
         }
+        memory[level2PageTable[firstLevelIndex][secondLevelIndex].addressInMemory].ref = 1;
     }
 }
 
@@ -952,7 +969,6 @@ void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
         }
 
         if (level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].valid) {
-            memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
                 level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 1; 
                 memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].lastAccess = memoryAccess;
@@ -976,9 +992,13 @@ void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
                 memory[currentMemorySize].addressInTable = addr;
                 memory[currentMemorySize].lastAccess = memoryAccess;
 
-                if (strcmp(alg, "lru") == 0) {
+                //LRU
+                if (strcmp(alg, "lru") == 0) 
                     addList();
-                }
+                
+                //SECONDCHANCE
+                if(strcmp(alg, "secondChance") == 0)
+                    addCircularList();
 
                 currentMemorySize++;
             } else {
@@ -1005,6 +1025,7 @@ void simulateVirtualMemory3Level(FILE *file, int offset, char *alg) {
                     level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].changed = 0;
             }
         }
+        memory[level3PageTable[firstLevelIndex][secondLevelIndex][thirdLevelIndex].addressInMemory].ref = 1;
     }
 }
 
@@ -1038,8 +1059,9 @@ int main(int argc, char* argv[]){
 
     printf("\n--------------------------------\nExecutando o simulador...\n\n");
     printf("Arquivo de entrada: %s\n", argv[2]);
-    printf("Tamanho da memoria: %iKB\n", memorySize);
+    printf("Tamanho da memoria: %iKB\n", memoryCompleteSize);
     printf("Tamanho das paginas: %iKB\n", pageSize);
+    printf("Quantidade de paginas: %i\n", memorySize);
     printf("Tecnica de reposicao: %s\n", alg);
     printf("Estrutura da tabela: %s\n\n", table_structure);
 
@@ -1047,7 +1069,9 @@ int main(int argc, char* argv[]){
     // simulate virtual memory
     initMemory();
     if(strcmp(alg, "lru") == 0)
-            initAuxList();
+            initAuxList(&indexList);
+    if(strcmp(alg, "secondChance") == 0)
+            initAuxList(&circularList);
 
     if(strcmp(table_structure, "2level") == 0){
         initFirstLevelPageTable2Level();
@@ -1077,6 +1101,8 @@ int main(int argc, char* argv[]){
     free(memory);
     if(strcmp(alg, "lru") == 0)
             free(indexList);
+    if(strcmp(alg, "secondChance") == 0)
+            free(circularList);
     fclose(file);
 
     return 0;
