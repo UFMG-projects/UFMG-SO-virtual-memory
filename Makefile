@@ -10,18 +10,21 @@ tp2virtual: tp2virtual.c
 clean:
 	rm -f tp2virtual saidas.txt
 
+test:
+	./tp2virtual fifo files/compilador.log 24 512
+
 # gera as saídas para análise dado um arquivo(files/compilador.log) e um tamanho fixo de memória(1024)
 # alterar ARQUIVO para diferentes resultados
 page_graf: tp2virtual
 	@echo "" > saidas.txt
-	@echo "TamanhoPagina PageFaults DirtyPages" >> saidas.txt
+	@echo "TamanhoPagina DirtyPages PageFaults" >> saidas.txt
 	@for j in fifo secondChance random lru; do \
 		echo "\nAlgoritmo: $$j\n" >> saidas.txt; \
 		for i in 2 4 8 16 32 64; do \
-			./tp2virtual $$j files/compilador.log $$i 1024> temp_output.txt; \
-			pageFaults=$$(grep "Page Faults:" temp_output.txt | awk '{print $$3}'); \
+			./tp2virtual $$j files/simulador.log $$i 1024> temp_output.txt; \
 			dirtyPages=$$(grep "Paginas Sujas:" temp_output.txt | awk '{print $$3}'); \
-			echo "$$i $$pageFaults $$dirtyPages" >> saidas.txt; \
+			pageFaults=$$(grep "Page Faults:" temp_output.txt | awk '{print $$3}'); \
+			echo "$$i $$dirtyPages $$pageFaults" >> saidas.txt; \
 		done; \
 	done
 	@rm temp_output.txt
