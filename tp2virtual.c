@@ -177,16 +177,26 @@ void invertedFifo(int addr){
 
     invertedPageTable[aux.addressInTable].addressInMemory = memorySize-1;
     invertedPageTable[aux.addressInTable].addressVirtual = addr;
+    if(invertedPageTable[aux.addressInTable].changed){
+        dirtyPages++;
+        invertedPageTable[aux.addressInTable].changed = 0;
+    }
     invertedPageTable[aux.addressInTable].valid = 1;
     memory[memorySize-1].addressInTable = aux.addressInTable;
     memory[memorySize-1].lastAccess = memoryAccess; 
 }
 
-void invertedRandom(int addr){
+int invertedRandom(int addr){
     int randomNum = rand() % memorySize;
 
     invertedPageTable[memory[randomNum].addressInTable].addressVirtual = addr;
+    if(invertedPageTable[memory[randomNum].addressInTable].changed){
+        dirtyPages++;
+        invertedPageTable[memory[randomNum].addressInTable].changed = 0;
+    }
     memory[randomNum].lastAccess = memoryAccess;
+
+    return memory[randomNum].addressInTable;
 }  
 
 void invertedSecondChance(int addr){
@@ -247,6 +257,18 @@ int searchInvertedPageTable(int table_addr){
 
     return index;
 }
+
+int AUXsearchInvertedPageTable(int table_addr){
+
+    for(int i=0; i<memorySize; i++){
+        if(invertedPageTable[i].addressVirtual == table_addr)
+            return i;
+    }
+
+    return -1;
+
+}
+
 
 int addInInvertedPageTable(int table_addr){
     int index = hashFunction(table_addr);
@@ -753,13 +775,21 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
 
         // addr = [p][d]
         int tableAddr = addr >> offset;
-        int tablePosition = searchInvertedPageTable(tableAddr);
+        // int tablePosition = searchInvertedPageTable(tableAddr);
+        int tablePosition = AUXsearchInvertedPageTable(tableAddr);
+
         if(tablePosition >= 0){
             
             memory[invertedPageTable[tablePosition].addressInMemory].ref = 1;
             if(tolower(rw) == 'w'){
-                memory[invertedPageTable[tablePosition].addressInMemory].changed = 1;
+                pageTable[tablePosition].changed = 1; 
                 memory[invertedPageTable[tablePosition].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(invertedPageTable[tablePosition].changed)
+                    invertedPageTable[tablePosition].changed = 1;
+                else
+                    invertedPageTable[tablePosition].changed = 0;
             }
 
             //LRU
@@ -769,10 +799,15 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
         else {
             pageFaults++;
             if(memorySize > currentMemorySize){
-                tablePosition = addInInvertedPageTable(tableAddr);
+                // tablePosition = addInInvertedPageTable(tableAddr);
+                // memory[currentMemorySize].addressInTable = tablePosition;
+                // memory[currentMemorySize].lastAccess = memoryAccess;              
 
-                memory[currentMemorySize].addressInTable = tablePosition;
-                memory[currentMemorySize].lastAccess = memoryAccess;              
+                invertedPageTable[currentMemorySize].addressVirtual = tableAddr;
+                invertedPageTable[currentMemorySize].addressInMemory = currentMemorySize;
+
+                memory[currentMemorySize].addressInTable = currentMemorySize;
+                memory[currentMemorySize].lastAccess = memoryAccess;  
 
                 //LRU
                 if(strcmp(alg, "lru") == 0)
@@ -792,9 +827,20 @@ void simulateVirtualMemoryInverted(FILE *file, int offset, char *alg){
                     invertedSecondChance(tableAddr);
                 }
                 else if(strcmp(alg, "random") == 0){
-                    invertedRandom(tableAddr);
+                    tablePosition = invertedRandom(tableAddr);
                 }
             }
+            if(tolower(rw) == 'w'){
+                pageTable[tablePosition].changed = 1; 
+                memory[invertedPageTable[tablePosition].addressInMemory].lastAccess = memoryAccess;
+            }
+            else{
+                if(invertedPageTable[tablePosition].changed)
+                    invertedPageTable[tablePosition].changed = 1;
+                else
+                    invertedPageTable[tablePosition].changed = 0;
+            }
+            
         }
     }
 }
